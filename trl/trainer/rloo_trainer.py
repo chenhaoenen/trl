@@ -473,12 +473,7 @@ class RLOOTrainer(Trainer):
                 wandb.log({"completions": wandb.Table(dataframe=df)})
 
     @wraps(Trainer.push_to_hub)
-    def push_to_hub(
-        self,
-        commit_message: Optional[str] = "End of training",
-        blocking: bool = True,
-        **kwargs,
-    ) -> str:
+    def push_to_hub(self, commit_message: Optional[str] = "End of training", blocking: bool = True, **kwargs) -> str:
         """
         Overwrite the `push_to_hub` method in order to force-add the tag "rloo" when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.

@@ -210,13 +210,6 @@ class PPOv2Trainer(Trainer):
     def get_eval_dataloader(self) -> DataLoader:
         return self.eval_dataloader
 
-    def push_to_hub(self, **kwargs):
-        """Modified from `Trainer.save_model` to only save the policy and not the value network."""
-        self.backup_model = self.model
-        self.model = self.accelerator.unwrap_model(self.model).policy  # save only the policy
-        super().push_to_hub(**kwargs)
-        self.model = self.backup_model
-
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         """Modified from `Trainer.save_model` to only save the policy and not the value network."""
         if not _internal_call:  # `push_to_hub` already swaps out the self.model with policy
@@ -579,16 +572,16 @@ class PPOv2Trainer(Trainer):
                 wandb.log({"completions": wandb.Table(dataframe=df)})
 
     @wraps(Trainer.push_to_hub)
-    def push_to_hub(
-        self,
-        commit_message: Optional[str] = "End of training",
-        blocking: bool = True,
-        **kwargs,
-    ) -> str:
+    def push_to_hub(self, commit_message: Optional[str] = "End of training", blocking: bool = True, **kwargs) -> str:
         """
         Overwrite the `push_to_hub` method in order to force-add the tag "ppo" when pushing the
         model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
         Unlike the parent class, we don't use the `token` argument to mitigate security risks.
         """
+        # Modified from `Trainer.save_model` to only save the policy and not the value network.
+        self.backup_model = self.model
+        self.model = self.accelerator.unwrap_model(self.model).policy  # save only the policy
         kwargs = trl_sanitze_kwargs_for_tagging(model=self.model, tag_names=self._tag_names, kwargs=kwargs)
-        return super().push_to_hub(commit_message=commit_message, blocking=blocking, **kwargs)
+        url = super().push_to_hub(commit_message=commit_message, blocking=blocking, **kwargs)
+        self.model = self.backup_model
+        return url
