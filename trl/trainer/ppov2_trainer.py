@@ -2,7 +2,6 @@ import gc
 import os
 import time
 from collections import OrderedDict, defaultdict
-from collections import defaultdict
 from functools import wraps
 from typing import Dict, List, Optional, Tuple, Union
 
