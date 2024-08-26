@@ -1056,10 +1056,10 @@ class DPOTrainer(Trainer):
 
     def dpo_loss(
         self,
-        policy_chosen_logps: torch.FloatTensor,
-        policy_rejected_logps: torch.FloatTensor,
-        reference_chosen_logps: torch.FloatTensor,
-        reference_rejected_logps: torch.FloatTensor,
+        policy_chosen_logps: torch.FloatTensor, # [B]
+        policy_rejected_logps: torch.FloatTensor, # [B]
+        reference_chosen_logps: torch.FloatTensor, # [B]
+        reference_rejected_logps: torch.FloatTensor, # [B]
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         """Compute the DPO loss for a batch of policy and reference model log probabilities.
 
@@ -1093,15 +1093,22 @@ class DPOTrainer(Trainer):
                 alpha_coef = float(self.f_divergence_params[FDivergenceConstants.ALPHA_DIVERGENCE_COEF_KEY])
             logits = (cap_exp(rejected_logratios * -alpha_coef) - cap_exp(chosen_logratios * -alpha_coef)) / alpha_coef
         else:
-            pi_logratios = policy_chosen_logps - policy_rejected_logps
+            pi_logratios = policy_chosen_logps - policy_rejected_logps # 陈浩 log_pi(chosen) - log_pi(rejected)
             if self.reference_free:
                 ref_logratios = torch.tensor([0], dtype=pi_logratios.dtype, device=pi_logratios.device)
             else:
-                ref_logratios = reference_chosen_logps - reference_rejected_logps
+                ref_logratios = reference_chosen_logps - reference_rejected_logps # 陈浩 log_ref(chosen) - log_ref(rejected)
 
             pi_logratios = pi_logratios.to(self.accelerator.device)
             ref_logratios = ref_logratios.to(self.accelerator.device)
-            logits = pi_logratios - ref_logratios
+            """
+            陈浩 
+            pi_logratios - ref_logratios = 
+                    = [log_pi(chosen) - log_pi(rejected)] - [log_ref(chosen) - log_ref(rejected)] 
+                    = [log_pi(chosen) - log_ref(chosen)] - [log_pi(rejected) - log_ref(rejected)]
+                    = log[ pi(chosen) / ref(chosen) ]  - log[ pi(rejected) / ref(rejected) ]  # 这个不就是论文以及帖子里面的公式么
+            """
+            logits = pi_logratios - ref_logratios 
 
             if self.f_divergence_type == FDivergenceType.JS_DIVERGENCE.value:
                 # The js-divergence formula: log(2 * u / (1 + u))
@@ -1318,7 +1325,7 @@ class DPOTrainer(Trainer):
             # average_log_prob=self.loss_type == "ipo",
             is_encoder_decoder=self.is_encoder_decoder,
             label_pad_token_id=self.label_pad_token_id,
-        )
+        ) # all_logps [B], size_completion [B]
 
         def cross_entropy_loss(logits, labels):
             if not self.is_encoder_decoder:
@@ -1340,11 +1347,11 @@ class DPOTrainer(Trainer):
         if self.loss_type == "ipo":
             all_logps = all_logps / size_completion
 
-        chosen_logps = all_logps[:len_chosen]
+        chosen_logps = all_logps[:len_chosen] # 2n个样本，前n个都是chosen 后n个都是rejected, 这里的 logps是个 scalar
         rejected_logps = all_logps[len_chosen:]
 
-        chosen_logits = all_logits[:len_chosen]
-        rejected_logits = all_logits[len_chosen:]
+        chosen_logits = all_logits[:len_chosen] # [B/2, L, V]
+        rejected_logits = all_logits[len_chosen:] # [B/2, L, V]
 
         if self.aux_loss_enabled:
             return (chosen_logps, rejected_logps, chosen_logits, rejected_logits, nll_loss, outputs.aux_loss)
@@ -1362,10 +1369,10 @@ class DPOTrainer(Trainer):
 
         forward_output = self.concatenated_forward(model, batch)
         (
-            policy_chosen_logps,
-            policy_rejected_logps,
-            policy_chosen_logits,
-            policy_rejected_logits,
+            policy_chosen_logps, # [B]
+            policy_rejected_logps, # [B]
+            policy_chosen_logits,  # [B, L, V]
+            policy_rejected_logits, # [B, L, V]
             policy_nll_loss,
         ) = forward_output[:5]
         if self.aux_loss_enabled:
@@ -1391,19 +1398,19 @@ class DPOTrainer(Trainer):
                             _,
                         ) = self.concatenated_forward(self.model, batch)
                 else:
-                    (
-                        reference_chosen_logps,
-                        reference_rejected_logps,
+                    ( 
+                        reference_chosen_logps, # [B]
+                        reference_rejected_logps, # [B]
                         _,
                         _,
                         _,
                     ) = self.concatenated_forward(self.ref_model, batch)
 
         losses, chosen_rewards, rejected_rewards = self.dpo_loss(
-            policy_chosen_logps,
-            policy_rejected_logps,
-            reference_chosen_logps,
-            reference_rejected_logps,
+            policy_chosen_logps, # [B]
+            policy_rejected_logps, # [B]
+            reference_chosen_logps, # [B]
+            reference_rejected_logps, # [B]
         )
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
