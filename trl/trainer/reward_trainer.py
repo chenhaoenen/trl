@@ -243,6 +243,7 @@ class RewardTrainer(Trainer):
         if "margin" in inputs:
             loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected - inputs["margin"]).mean()
         else:
+            # 这里和 DeepSpeedExample的实现一致，具体可参看自己的注释（https://github.com/chenhaoenen/deepspeed-transformers-src/blob/master/DeepSpeedExamples/applications/DeepSpeed-Chat/training/utils/model/reward_model.py）
             loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected).mean()
 
         if self.args.center_rewards_coefficient is not None:
