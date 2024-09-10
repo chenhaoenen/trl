@@ -1020,7 +1020,7 @@ class DPOTrainer(Trainer):
                 elif k.endswith("_attention_mask"):
                     pad_value = 0
                 concatenated_key = k.replace("chosen", "concatenated")
-                concatenated_batch[concatenated_key] = pad_to_length(batch[k], max_length, pad_value=pad_value)
+                concatenated_batch[concatenated_key] = pad_to_length(batch[k], max_length, pad_value=pad_value) # 拿到 chosen 的
         for k in batch:
             if k.startswith("rejected") and isinstance(batch[k], torch.Tensor):
                 if "labels" in k or is_encoder_decoder:
@@ -1030,7 +1030,7 @@ class DPOTrainer(Trainer):
                 elif k.endswith("_attention_mask"):
                     pad_value = 0
                 concatenated_key = k.replace("rejected", "concatenated")
-                concatenated_batch[concatenated_key] = torch.cat(
+                concatenated_batch[concatenated_key] = torch.cat( # 拼接 rejected 的
                     (
                         concatenated_batch[concatenated_key],
                         pad_to_length(batch[k], max_length, pad_value=pad_value),
@@ -1271,9 +1271,12 @@ class DPOTrainer(Trainer):
         # dummy token; we'll ignore the losses on these tokens later
         labels[labels == label_pad_token_id] = 0
 
-        per_token_logps = torch.gather(logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)).squeeze(2)
+        
+        per_token_logps = torch.gather(logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)).squeeze(2) #[B, seq_len]
 
-        return (per_token_logps * loss_mask).sum(-1), loss_mask.sum(-1)
+        # ([B], [B])  sum(log[x1, x2, x3, x4]) 相当于 log(x1*x2*x3), 
+        # 相当于语言模型，x1, x2, x3 相当于生成 token t1, t2, t3的概率值， x1*x2*x3则相当于语言模型，`t1,t2,t3`是一个句子的概率
+        return (per_token_logps * loss_mask).sum(-1), loss_mask.sum(-1) 
 
     def concatenated_forward(
         self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
@@ -1312,7 +1315,7 @@ class DPOTrainer(Trainer):
             use_cache=False,
             **model_kwargs,
         )
-        all_logits = outputs.logits
+        all_logits = outputs.logits # [B, seq_len, vocab]
 
         if all_logits.shape[:2] != concatenated_batch["concatenated_labels"].shape[:2]:
             # for llava, the model returns logits for the entire sequence, including the image tokens (placed before the text tokens)
